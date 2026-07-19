@@ -1,0 +1,196 @@
+package com.fsat.fsatdesk_api.service;
+
+import com.fsat.fsatdesk_api.model.Activity;
+import com.fsat.fsatdesk_api.model.Ticket;
+import com.fsat.fsatdesk_api.model.User;
+import com.fsat.fsatdesk_api.repository.TicketRepository;
+import com.fsat.fsatdesk_api.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class TicketService {
+
+    private final TicketRepository ticketRepository;
+    private final UserService userService;
+    private final EmailService emailService;          // Inyectamos el servicio de correo
+    private final UserRepository userRepository;      // Inyectamos el repositorio de usuarios
+
+    private String generateTicketId() {
+        long count = ticketRepository.count() + 1;
+        return "TK-" + String.format("%03d", count);
+    }
+
+    @Transactional
+    public Ticket createTicket(Ticket ticket, String userId) {
+        User user = userService.findById(userId)
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+
+        ticket.setTicketId(generateTicketId());
+        ticket.setUserId(user.getId());
+        ticket.setUser(user.getName());
+        ticket.setEmail(user.getEmail());
+        ticket.setStatus("Abierto");
+        ticket.setCreated(LocalDate.now());
+        ticket.setUpdated(LocalDate.now());
+
+        Activity act = Activity.builder()
+                .by("Sistema")
+                .text("Ticket creado por " + user.getName())
+                .time(LocalTime.now().toString().substring(0, 5))
+                .date(LocalDate.now())
+                .build();
+        ticket.getActivity().add(act);
+
+        Ticket savedTicket = ticketRepository.save(ticket);
+
+        // Enviar correo a todos los técnicos activos
+        sendEmailToTechnicians(savedTicket, user);
+
+        return savedTicket;
+    }
+
+    /**
+     * Envía un correo electrónico a todos los técnicos activos con la información del ticket.
+     */
+    private void sendEmailToTechnicians(Ticket ticket, User creator) {
+        List<User> tecnicos = userRepository.findByRolAndActivoTrue("tecnico");
+        if (tecnicos.isEmpty()) {
+            log.info("No hay técnicos activos para notificar.");
+            return;
+        }
+
+        String subject = "Nuevo ticket " + ticket.getTicketId() + ": " + ticket.getTitle();
+
+        String body = "<html><body>"
+                + "<h2>Nuevo ticket de soporte</h2>"
+                + "<p><strong>ID:</strong> " + escapeHtml(ticket.getTicketId()) + "</p>"
+                + "<p><strong>Título:</strong> " + escapeHtml(ticket.getTitle()) + "</p>"
+                + "<p><strong>Categoría:</strong> " + escapeHtml(ticket.getCategory()) + "</p>"
+                + "<p><strong>Prioridad:</strong> " + escapeHtml(ticket.getPriority()) + "</p>"
+                + "<p><strong>Solicitante:</strong> " + escapeHtml(creator.getName()) + " (" + escapeHtml(creator.getEmail()) + ")</p>"
+                + "<p><strong>Descripción:</strong><br/>" + escapeHtml(ticket.getDesc()).replace("\n", "<br/>") + "</p>"
+                + "<p><strong>Dispositivo:</strong> " + escapeHtml(ticket.getDevice()) + "</p>"
+                + "<p><strong>Ubicación:</strong> " + escapeHtml(ticket.getLocation()) + "</p>"
+                + "<br/>"
+                + "<p><a href='http://localhost:8080'>Ver en FSATDesk</a></p>"
+                + "</body></html>";
+
+        for (User tech : tecnicos) {
+            emailService.sendHtmlEmail(tech.getEmail(), subject, body);
+        }
+    }
+
+    public List<Ticket> findAll() {
+        return ticketRepository.findAll();
+    }
+
+    public Optional<Ticket> findByTicketId(String ticketId) {
+        return ticketRepository.findByTicketId(ticketId);
+    }
+
+    public List<Ticket> findByUserId(String userId) {
+        return ticketRepository.findByUserId(userId);
+    }
+
+    public List<Ticket> findByTecnico(String tecnico) {
+        return ticketRepository.findByTecnico(tecnico);
+    }
+
+    @Transactional
+    public Ticket addComment(String ticketId, String userName, String commentText) {
+        Ticket ticket = findByTicketId(ticketId)
+                .orElseThrow(() -> new RuntimeException("Ticket no encontrado"));
+
+        Activity act = Activity.builder()
+                .by(userName)
+                .text(commentText)
+                .time(LocalTime.now().toString().substring(0, 5))
+                .date(LocalDate.now())
+                .build();
+        ticket.getActivity().add(act);
+        ticket.setUpdated(LocalDate.now());
+        return ticketRepository.save(ticket);
+    }
+
+    @Transactional
+    public Ticket changeStatus(String ticketId, String status) {
+        Ticket ticket = findByTicketId(ticketId)
+                .orElseThrow(() -> new RuntimeException("Ticket no encontrado"));
+        ticket.setStatus(status);
+        ticket.getActivity().add(Activity.builder()
+                .by("Sistema")
+                .text("Estado cambiado a: " + status)
+                .time(LocalTime.now().toString().substring(0, 5))
+                .date(LocalDate.now())
+                .build());
+        ticket.setUpdated(LocalDate.now());
+        return ticketRepository.save(ticket);
+    }
+
+    @Transactional
+    public Ticket assignTecnico(String ticketId, String tecnicoName) {
+        Ticket ticket = findByTicketId(ticketId)
+                .orElseThrow(() -> new RuntimeException("Ticket no encontrado"));
+        ticket.setTecnico(tecnicoName);
+        ticket.getActivity().add(Activity.builder()
+                .by("Sistema")
+                .text("Asignado a: " + (tecnicoName == null ? "Sin asignar" : tecnicoName))
+                .time(LocalTime.now().toString().substring(0, 5))
+                .date(LocalDate.now())
+                .build());
+        ticket.setUpdated(LocalDate.now());
+        return ticketRepository.save(ticket);
+    }
+
+    @Transactional
+    public Ticket changePriority(String ticketId, String priority) {
+        Ticket ticket = findByTicketId(ticketId)
+                .orElseThrow(() -> new RuntimeException("Ticket no encontrado"));
+        ticket.setPriority(priority);
+        ticket.getActivity().add(Activity.builder()
+                .by("Sistema")
+                .text("Prioridad cambiada a: " + priority)
+                .time(LocalTime.now().toString().substring(0, 5))
+                .date(LocalDate.now())
+                .build());
+        ticket.setUpdated(LocalDate.now());
+        return ticketRepository.save(ticket);
+    }
+
+    @Transactional
+    public void deleteTicket(String ticketId) {
+        Ticket ticket = findByTicketId(ticketId)
+                .orElseThrow(() -> new RuntimeException("Ticket no encontrado"));
+        ticketRepository.delete(ticket);
+    }
+
+    public List<Ticket> filterTickets(LocalDate desde, LocalDate hasta, String status, String priority, String category) {
+        return ticketRepository.findAll().stream()
+                .filter(t -> desde == null || !t.getCreated().isBefore(desde))
+                .filter(t -> hasta == null || !t.getCreated().isAfter(hasta))
+                .filter(t -> status == null || status.isEmpty() || t.getStatus().equals(status))
+                .filter(t -> priority == null || priority.isEmpty() || t.getPriority().equals(priority))
+                .filter(t -> category == null || category.isEmpty() || t.getCategory().equals(category))
+                .collect(Collectors.toList());
+    }
+    private String escapeHtml(String text) {
+        if (text == null) return "";
+        return text.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
+    }
+}
