@@ -31,8 +31,20 @@ public class TicketService {
     private String extraRecipient;
 
     private String generateTicketId() {
-        long count = ticketRepository.count() + 1;
-        return "TK-" + String.format("%03d", count);
+        // Obtener el número más alto de ticketId existente
+        Optional<String> maxTicketId = ticketRepository.findMaxTicketId();
+        int nextNum = 1;
+        if (maxTicketId.isPresent()) {
+            String id = maxTicketId.get();
+            // Extraer el número de TK-XXX
+            String numPart = id.substring(3);
+            try {
+                nextNum = Integer.parseInt(numPart) + 1;
+            } catch (NumberFormatException e) {
+                nextNum = 1;
+            }
+        }
+        return "TK-" + String.format("%03d", nextNum);
     }
 
     @Transactional
