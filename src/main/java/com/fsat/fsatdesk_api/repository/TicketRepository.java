@@ -29,4 +29,6 @@ public interface TicketRepository extends JpaRepository<Ticket, Long>, JpaSpecif
                               @Param("status") String status,
                               @Param("priority") String priority,
                               @Param("category") String category);
+    @Query("SELECT MAX(t.ticketId) FROM Ticket t")
+    Optional<String> findMaxTicketId();
 }
