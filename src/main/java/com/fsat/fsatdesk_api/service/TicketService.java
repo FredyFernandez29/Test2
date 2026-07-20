@@ -30,18 +30,23 @@ public class TicketService {
     @Value("${mail.extra.recipient:fredyfernandezrd@gmail.com}")
     private String extraRecipient;
 
+    /**
+     * Genera un nuevo ticketId en formato TK-XXX.
+     * Busca el ID más alto existente y suma 1.
+     */
     private String generateTicketId() {
-        // Obtener el número más alto de ticketId existente
         Optional<String> maxTicketId = ticketRepository.findMaxTicketId();
         int nextNum = 1;
-        if (maxTicketId.isPresent()) {
+        if (maxTicketId.isPresent() && maxTicketId.get() != null) {
             String id = maxTicketId.get();
-            // Extraer el número de TK-XXX
-            String numPart = id.substring(3);
-            try {
-                nextNum = Integer.parseInt(numPart) + 1;
-            } catch (NumberFormatException e) {
-                nextNum = 1;
+            if (id != null && id.startsWith("TK-")) {
+                String numPart = id.substring(3);
+                try {
+                    nextNum = Integer.parseInt(numPart) + 1;
+                } catch (NumberFormatException e) {
+                    log.warn("Formato de ticketId inválido: {}, usando número 1", id);
+                    nextNum = 1;
+                }
             }
         }
         return "TK-" + String.format("%03d", nextNum);
@@ -213,12 +218,6 @@ public class TicketService {
     }
 
     public List<Ticket> filterTickets(LocalDate desde, LocalDate hasta, String status, String priority, String category) {
-        return ticketRepository.findAll().stream()
-                .filter(t -> desde == null || !t.getCreated().isBefore(desde))
-                .filter(t -> hasta == null || !t.getCreated().isAfter(hasta))
-                .filter(t -> status == null || status.isEmpty() || t.getStatus().equals(status))
-                .filter(t -> priority == null || priority.isEmpty() || t.getPriority().equals(priority))
-                .filter(t -> category == null || category.isEmpty() || t.getCategory().equals(category))
-                .collect(Collectors.toList());
+        return ticketRepository.findFiltered(desde, hasta, status, priority, category);
     }
 }
