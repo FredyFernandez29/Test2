@@ -58,44 +58,36 @@ public class TicketService {
 
         Ticket savedTicket = ticketRepository.save(ticket);
 
+        // --- LOG: Ticket creado ---
+        log.info("Ticket creado exitosamente: {}", savedTicket.getTicketId());
+        log.info("Iniciando envío de correos para ticket: {}", savedTicket.getTicketId());
+
         // --- ENVÍO DE CORREOS A TÉCNICOS Y DESTINATARIO EXTRA ---
         sendEmailNotifications(savedTicket, user);
 
         return savedTicket;
-
-        log.info("Ticket creado exitosamente: {}", savedTicket.getTicketId());
-        log.info("Iniciando envío de correos para ticket: {}", savedTicket.getTicketId()); sendEmailNotifications(savedTicket, user);
     }
 
     private void sendEmailNotifications(Ticket ticket, User creator) {
-
         log.info("Buscando técnicos activos para notificar...");
         List<User> tecnicos = userRepository.findByRolAndActivoTrue("tecnico");
         log.info("Técnicos encontrados: {}", tecnicos.size());
-        for (User tech : tecnicos) {
-            log.info("Enviando correo a técnico: {}", tech.getEmail());
-            emailService.sendHtmlEmail(tech.getEmail(), subject, body);
-}
-        if (extraRecipient != null && !extraRecipient.isEmpty()) {
-            log.info("Enviando correo a destinatario extra: {}", extraRecipient);
-            emailService.sendHtmlEmail(extraRecipient, subject, body);
-        } else {
-            log.warn("Destinatario extra no definido o vacío.");
-}
-        
-        List<User> tecnicos = userRepository.findByRolAndActivoTrue("tecnico");
-        
+
         String subject = "Nuevo ticket " + ticket.getTicketId() + ": " + ticket.getTitle();
         String body = buildEmailBody(ticket, creator);
 
         // Enviar a todos los técnicos activos
         for (User tech : tecnicos) {
+            log.info("Enviando correo a técnico: {}", tech.getEmail());
             emailService.sendHtmlEmail(tech.getEmail(), subject, body);
         }
 
         // Enviar también al destinatario fijo (administrador o supervisor)
         if (extraRecipient != null && !extraRecipient.isEmpty()) {
+            log.info("Enviando correo a destinatario extra: {}", extraRecipient);
             emailService.sendHtmlEmail(extraRecipient, subject, body);
+        } else {
+            log.warn("Destinatario extra no definido o vacío.");
         }
     }
 
