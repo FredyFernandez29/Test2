@@ -80,6 +80,7 @@ public class TicketService {
         log.info("Iniciando envío de correos para ticket: {}", savedTicket.getTicketId());
 
         // --- ENVÍO DE CORREOS A TÉCNICOS Y DESTINATARIO EXTRA ---
+        // Si no deseas enviar correos, comenta la siguiente línea
         sendEmailNotifications(savedTicket, user);
 
         return savedTicket;
@@ -217,24 +218,14 @@ public class TicketService {
         ticketRepository.delete(ticket);
     }
 
+    // Método de filtrado en memoria (evita problemas de tipo con JPQL)
     public List<Ticket> filterTickets(LocalDate desde, LocalDate hasta, String status, String priority, String category) {
-        Specification<Ticket> spec = Specification.where(null);
-        if (desde != null) {
-            spec = spec.and((root, query, cb) -> cb.greaterThanOrEqualTo(root.get("created"), desde));
-        }
-        if (hasta != null) {
-            spec = spec.and((root, query, cb) -> cb.lessThanOrEqualTo(root.get("created"), hasta));
-        }
-        if (status != null && !status.isEmpty()) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
-        }
-        if (priority != null && !priority.isEmpty()) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("priority"), priority));
-        }
-        if (category != null && !category.isEmpty()) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("category"), category));
-        }
-        return ticketRepository.findAll(spec);
-    }
+        return ticketRepository.findAll().stream()
+                .filter(t -> desde == null || !t.getCreated().isBefore(desde))
+                .filter(t -> hasta == null || !t.getCreated().isAfter(hasta))
+                .filter(t -> status == null || status.isEmpty() || t.getStatus().equals(status))
+                .filter(t -> priority == null || priority.isEmpty() || t.getPriority().equals(priority))
+                .filter(t -> category == null || category.isEmpty() || t.getCategory().equals(category))
+                .collect(Collectors.toList());
     }
 }
