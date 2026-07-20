@@ -218,6 +218,23 @@ public class TicketService {
     }
 
     public List<Ticket> filterTickets(LocalDate desde, LocalDate hasta, String status, String priority, String category) {
-        return ticketRepository.findFiltered(desde, hasta, status, priority, category);
+        Specification<Ticket> spec = Specification.where(null);
+        if (desde != null) {
+            spec = spec.and((root, query, cb) -> cb.greaterThanOrEqualTo(root.get("created"), desde));
+        }
+        if (hasta != null) {
+            spec = spec.and((root, query, cb) -> cb.lessThanOrEqualTo(root.get("created"), hasta));
+        }
+        if (status != null && !status.isEmpty()) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
+        }
+        if (priority != null && !priority.isEmpty()) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("priority"), priority));
+        }
+        if (category != null && !category.isEmpty()) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("category"), category));
+        }
+        return ticketRepository.findAll(spec);
+    }
     }
 }
