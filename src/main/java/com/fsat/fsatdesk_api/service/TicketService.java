@@ -7,7 +7,7 @@ import com.fsat.fsatdesk_api.repository.TicketRepository;
 import com.fsat.fsatdesk_api.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,8 +24,11 @@ public class TicketService {
 
     private final TicketRepository ticketRepository;
     private final UserService userService;
-    private final EmailService emailService;          // Inyectamos el servicio de correo
-    private final UserRepository userRepository;      // Inyectamos el repositorio de usuarios
+    private final EmailService emailService;
+    private final UserRepository userRepository;
+
+    @Value("${mail.extra.recipient:fredyfernandezrd@gmail.com}")
+    private String extraRecipient;
 
     private String generateTicketId() {
         long count = ticketRepository.count() + 1;
@@ -55,25 +58,31 @@ public class TicketService {
 
         Ticket savedTicket = ticketRepository.save(ticket);
 
-        // Enviar correo a todos los técnicos activos
-        sendEmailToTechnicians(savedTicket, user);
+        // --- ENVÍO DE CORREOS A TÉCNICOS Y DESTINATARIO EXTRA ---
+        sendEmailNotifications(savedTicket, user);
 
         return savedTicket;
     }
 
-    /**
-     * Envía un correo electrónico a todos los técnicos activos con la información del ticket.
-     */
-    private void sendEmailToTechnicians(Ticket ticket, User creator) {
+    private void sendEmailNotifications(Ticket ticket, User creator) {
         List<User> tecnicos = userRepository.findByRolAndActivoTrue("tecnico");
-        if (tecnicos.isEmpty()) {
-            log.info("No hay técnicos activos para notificar.");
-            return;
+        
+        String subject = "Nuevo ticket " + ticket.getTicketId() + ": " + ticket.getTitle();
+        String body = buildEmailBody(ticket, creator);
+
+        // Enviar a todos los técnicos activos
+        for (User tech : tecnicos) {
+            emailService.sendHtmlEmail(tech.getEmail(), subject, body);
         }
 
-        String subject = "Nuevo ticket " + ticket.getTicketId() + ": " + ticket.getTitle();
+        // Enviar también al destinatario fijo (administrador o supervisor)
+        if (extraRecipient != null && !extraRecipient.isEmpty()) {
+            emailService.sendHtmlEmail(extraRecipient, subject, body);
+        }
+    }
 
-        String body = "<html><body>"
+    private String buildEmailBody(Ticket ticket, User creator) {
+        return "<html><body>"
                 + "<h2>Nuevo ticket de soporte</h2>"
                 + "<p><strong>ID:</strong> " + escapeHtml(ticket.getTicketId()) + "</p>"
                 + "<p><strong>Título:</strong> " + escapeHtml(ticket.getTitle()) + "</p>"
@@ -84,12 +93,17 @@ public class TicketService {
                 + "<p><strong>Dispositivo:</strong> " + escapeHtml(ticket.getDevice()) + "</p>"
                 + "<p><strong>Ubicación:</strong> " + escapeHtml(ticket.getLocation()) + "</p>"
                 + "<br/>"
-                + "<p><a href='http://localhost:8080'>Ver en FSATDesk</a></p>"
+                + "<p><a href='https://fsatdesk-api.onrender.com'>Ver en FSATDesk</a></p>"
                 + "</body></html>";
+    }
 
-        for (User tech : tecnicos) {
-            emailService.sendHtmlEmail(tech.getEmail(), subject, body);
-        }
+    private String escapeHtml(String text) {
+        if (text == null) return "";
+        return text.replace("&", "&amp;")
+                   .replace("<", "&lt;")
+                   .replace(">", "&gt;")
+                   .replace("\"", "&quot;")
+                   .replace("'", "&#39;");
     }
 
     public List<Ticket> findAll() {
@@ -184,13 +198,5 @@ public class TicketService {
                 .filter(t -> priority == null || priority.isEmpty() || t.getPriority().equals(priority))
                 .filter(t -> category == null || category.isEmpty() || t.getCategory().equals(category))
                 .collect(Collectors.toList());
-    }
-    private String escapeHtml(String text) {
-        if (text == null) return "";
-        return text.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&#39;");
     }
 }
